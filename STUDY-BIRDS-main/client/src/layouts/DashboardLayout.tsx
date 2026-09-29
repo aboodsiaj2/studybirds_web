@@ -43,6 +43,9 @@ export const DashboardLayout = () => {
 
   const studentLinks = [
     { label: language === "ar" ? "الاستشارات والمواعيد" : "Consultations", href: "/student/consultations", icon: CalendarClock, description: language === "ar" ? "المواعيد والحجوزات" : "Availability and bookings" },
+    { label: language === "ar" ? "السكن الطلابي" : "Student Housing", href: "/student/accommodation", icon: Building2, description: language === "ar" ? "تصفح خيارات السكن واطلب حجزًا" : "Browse housing and request a booking" },
+    { label: language === "ar" ? "محفظتي" : "My Wallet", href: "/student/wallet", icon: CircleDollarSign, description: language === "ar" ? "رصيدك وكود الإحالة ومعاملاتك" : "Your balance, referral code and transactions" },
+    { label: language === "ar" ? "مجتمع الطلاب" : "Student Community", href: "/student/community", icon: Users2, description: language === "ar" ? "شارك تجربتك واسأل زملاءك" : "Share your experience and ask fellow students" },
     { label: language === "ar" ? "لوحة الطالب" : "Student Dashboard", href: "/student", icon: LayoutDashboard, description: language === "ar" ? "ملخص شامل لحالة القبول والمستندات والإشعارات." : "Executive overview of your admission progress, documents, and alerts." },
     { label: language === "ar" ? "طلباتي" : "My Applications", href: "/student/applications", icon: GraduationCap, description: language === "ar" ? "تابع الجامعات والتخصصات وحالة كل طلب." : "Track universities, programs, and each application status." },
     { label: language === "ar" ? "مستنداتي" : "My Documents", href: "/student/documents", icon: FileText, description: language === "ar" ? "ارفع مستنداتك وراجع حالتها وملاحظات المراجعة." : "Upload your documents and review their status and notes." },
@@ -85,6 +88,10 @@ export const DashboardLayout = () => {
 
   const adminLinks = [
     { label: language === "ar" ? "الاستشارات والمواعيد" : "Consultations", href: "/admin/consultations", icon: CalendarClock, description: language === "ar" ? "المواعيد والحجوزات" : "Availability and bookings" },
+    { label: language === "ar" ? "مركز التأشيرة" : "Visa Center", href: "/admin/visa", icon: IdCard, description: language === "ar" ? "متطلبات السفارة والمواعيد والتأمين" : "Embassy requirements, appointments and insurance" },
+    { label: language === "ar" ? "السكن الطلابي" : "Student Housing", href: "/admin/accommodation", icon: Building2, description: language === "ar" ? "إدارة خيارات السكن ومراجعة طلبات الحجز" : "Manage listings and review booking requests" },
+    { label: language === "ar" ? "محفظة الطلاب" : "Student Wallets", href: "/admin/wallet", icon: CircleDollarSign, description: language === "ar" ? "سجل المعاملات والتسويات اليدوية" : "Transaction log and manual adjustments" },
+    { label: language === "ar" ? "إشراف المجتمع" : "Community Moderation", href: "/admin/community", icon: Users2, description: language === "ar" ? "مراجعة مواضيع الطلاب وإخفاء المخالف منها" : "Review student posts and hide violations" },
     { label: t("overview"), href: "/admin", icon: LayoutDashboard, description: dt(language, "executiveSummary") },
     { label: dt(language, "users"), href: "/admin/users", icon: Users, description: dt(language, "userAccessDesc") },
     { label: language === "ar" ? "ملفات الطلاب" : "Student Profiles", href: "/admin/students", icon: GraduationCap, description: language === "ar" ? "الملف الشخصي الكامل لكل طالب مع جميع الوحدات المرتبطة به." : "Each student profile with linked operational modules." },
@@ -93,6 +100,7 @@ export const DashboardLayout = () => {
     { label: language === "ar" ? "مالية الطلاب" : "Student Financials", href: "/admin/student-financials", icon: CircleDollarSign, description: language === "ar" ? "إدارة الفواتير وإثباتات الدفع الخاصة بالطلاب." : "Manage student invoices and payment proofs." },
     { label: language === "ar" ? "وصول الطلاب" : "Student Arrivals", href: "/admin/student-arrivals", icon: Compass, description: language === "ar" ? "تنسيق الوصول والسكن والخدمات المساندة." : "Coordinate student arrival, housing, and support services." },
     { label: language === "ar" ? "دعم الطلاب" : "Student Support", href: "/admin/support-tickets", icon: HelpCircle, description: language === "ar" ? "الرد على تذاكر الدعم القادمة من الطلاب." : "Respond to student support conversations." },
+    { label: language === "ar" ? "طلبات الخدمات" : "Service Requests", href: "/admin/service-requests", icon: HelpCircle, description: language === "ar" ? "متابعة طلبات الخدمات المقدمة من الطلاب وتحديث حالاتها." : "Track and update student service requests." },
     { label: language === "ar" ? "إشعارات الطلاب" : "Student Notifications", href: "/admin/student-notifications", icon: Bell, description: language === "ar" ? "متابعة التنبيهات والإشعارات المرسلة للطلاب." : "Track notifications sent to students." },
     { label: language === "ar" ? "مفضلة الطلاب" : "Student Favorites", href: "/admin/student-favorites", icon: Layers3, description: language === "ar" ? "تحليل اهتمامات الطلاب المحفوظة." : "Review saved universities and programs across students." },
     { label: language === "ar" ? "دليل الطالب" : "Student Resources", href: "/admin/knowledge-base", icon: NotebookText, description: language === "ar" ? "إدارة نفس مواد دليل الطالب والموارد." : "Manage the same student resources and guide content." },

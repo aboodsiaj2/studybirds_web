@@ -1,5 +1,6 @@
 const express = require("express");
 const {
+  getMyKpis,
   getOverview,
   getStats,
   getStudents,
@@ -76,6 +77,9 @@ const {
   reviewVerificationDocumentAdmin,
   getSupportTicketsAdmin,
   replySupportTicketAdmin,
+  assignSupportTicketAdmin,
+  escalateSupportTicketAdmin,
+  markTicketEmergency,
   getKnowledgeBaseAdmin,
   createKnowledgeBaseItemAdmin,
   updateKnowledgeBaseItemAdmin,
@@ -84,6 +88,7 @@ const {
 const {
   getStudentDetailsAdmin,
   getStudentDocumentsAdmin,
+  reviewStudentDocumentAdmin,
   getStudentNotificationsAdmin,
   getStudentFinancialsAdmin,
   createStudentInvoiceAdmin,
@@ -105,6 +110,16 @@ const {
   getEmployeesAdmin,
   updateEmployeeRoleAdmin,
 } = require("../controllers/adminRoleManagementController");
+const {
+  getAccommodationListingsAdmin, createAccommodationListing, updateAccommodationListing, deleteAccommodationListing,
+  getAccommodationBookingsAdmin, updateAccommodationBookingStatus,
+} = require("../controllers/accommodationController");
+const { getWalletEntriesAdmin, createWalletAdjustmentAdmin } = require("../controllers/studentWalletController");
+const {
+  listPostsAdmin, getPostAdmin, listReportsAdmin, listModerationLogAdmin, moderatePost, moderateComment,
+  listSuspensionsAdmin, suspendUser, liftSuspension, getSettingsAdmin, updateSettingsAdmin,
+} = require("../controllers/communityController");
+const { unifiedSearch } = require("../controllers/unifiedSearchController");
 const { protect, authorize } = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
 
@@ -112,6 +127,14 @@ const router = express.Router();
 const { authorizeAdminSection } = require("../middleware/employeeAccess");
 
 router.use(protect, authorizeAdminSection);
+for (const kind of ['insurance', 'equivalency']) {
+  const controller = require('../controllers/studentServicesController');
+  router.get(`/students/:id/${kind}`, controller.staffRead(kind));
+  router.put(`/students/:id/${kind}`, controller.save(kind));
+}
+// #PRD-Admin: Unified global search across all entities
+router.get("/search", unifiedSearch);
+router.get("/my-kpis", getMyKpis);
 router.get("/overview", getOverview);
 router.get("/stats", getStats);
 router.get("/students", getStudents);
@@ -120,6 +143,12 @@ router.patch("/users/:id", updateUser);
 router.patch("/students/:id/status", updateSectionAccountStatus);
 router.patch("/partners/:id/status", updateSectionAccountStatus);
 router.get("/applications", getAdminApplications);
+router.get("/accommodation-listings", getAccommodationListingsAdmin);
+router.post("/accommodation-listings", createAccommodationListing);
+router.put("/accommodation-listings/:id", updateAccommodationListing);
+router.delete("/accommodation-listings/:id", deleteAccommodationListing);
+router.get("/accommodation-bookings", getAccommodationBookingsAdmin);
+router.patch("/accommodation-bookings/:id", updateAccommodationBookingStatus);
 router.get("/countries", getCountriesAdmin);
 router.post("/countries/upload-image", upload.single("file"), uploadCountryHeroImage);
 router.post("/countries", createCountry);
@@ -180,6 +209,9 @@ router.get("/verification-documents", getVerificationQueueAdmin);
 router.patch("/verification-documents/:id", reviewVerificationDocumentAdmin);
 router.get("/support-tickets", getSupportTicketsAdmin);
 router.patch("/support-tickets/:id/reply", replySupportTicketAdmin);
+router.patch("/support-tickets/:id/assign", assignSupportTicketAdmin);
+router.patch("/support-tickets/:id/escalate", escalateSupportTicketAdmin);
+router.patch("/support-tickets/:id/emergency", markTicketEmergency);
 router.get("/knowledge-base", getKnowledgeBaseAdmin);
 router.post("/knowledge-base", createKnowledgeBaseItemAdmin);
 router.put("/knowledge-base/:id", updateKnowledgeBaseItemAdmin);
@@ -187,10 +219,32 @@ router.delete("/knowledge-base/:id", deleteKnowledgeBaseItemAdmin);
 router.get("/student-financials", getStudentFinancialsAdmin);
 router.get("/students/:id", getStudentDetailsAdmin);
 router.get("/student-documents", getStudentDocumentsAdmin);
+router.patch("/student-documents/:id", reviewStudentDocumentAdmin);
 router.get("/student-notifications", getStudentNotificationsAdmin);
 router.post("/student-financials/invoices", createStudentInvoiceAdmin);
 router.patch("/student-financials/invoices/:id", updateStudentInvoiceAdmin);
 router.patch("/student-financials/payment-proofs/:id", reviewPaymentProofAdmin);
+router.get("/student-financials/wallet-entries", getWalletEntriesAdmin);
+const rewardRules = require('../controllers/studentRewardsController');
+router.get('/student-financials/reward-rules', rewardRules.listRules);
+const studentListings = require('../controllers/studentListingsController');
+router.get('/community-posts/listings', studentListings.list(true));
+router.post('/community-posts/listings', studentListings.save);
+router.put('/community-posts/listings/:id', studentListings.save);
+router.post('/student-financials/reward-rules', rewardRules.saveRule);
+router.put('/student-financials/reward-rules/:id', rewardRules.saveRule);
+router.post("/student-financials/wallet-entries", createWalletAdjustmentAdmin);
+router.get("/community-posts", listPostsAdmin);
+router.get("/community-posts/:id", getPostAdmin);
+router.patch("/community-posts/:id", moderatePost);
+router.patch("/community-comments/:id", moderateComment);
+router.get("/community-reports", listReportsAdmin);
+router.get("/community-moderation-log", listModerationLogAdmin);
+router.get("/community-suspensions", listSuspensionsAdmin);
+router.post("/community-suspensions", suspendUser);
+router.delete("/community-suspensions/:userId", liftSuspension);
+router.get("/community-settings", getSettingsAdmin);
+router.put("/community-settings", updateSettingsAdmin);
 router.get("/student-arrival-requests", getArrivalRequestsAdmin);
 router.patch("/student-arrival-requests/:id", updateArrivalRequestAdmin);
 router.get("/student-favorites", getStudentFavoritesAdmin);
@@ -211,5 +265,10 @@ router.post("/university-accounts", createUniversityAccountAdmin);
 router.patch("/university-accounts/:id", updateUniversityAccountAdmin);
 router.get("/employees", getEmployeesAdmin);
 router.patch("/employees/:id/role", updateEmployeeRoleAdmin);
+
+// #62/109/110: Employee productivity KPI
+const { getEmployeeStats, getEmployeeStatsById } = require('../controllers/employeeStatsController');
+router.get("/employee-stats", getEmployeeStats);
+router.get("/employee-stats/:id", getEmployeeStatsById);
 
 module.exports = router;

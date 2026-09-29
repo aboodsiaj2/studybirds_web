@@ -19,6 +19,7 @@ const userSchema = new mongoose.Schema(
       type: String,
     },
     appleId: { type: String, unique: true, sparse: true },
+    referralCode: { type: String, unique: true, sparse: true },
     verifiedPhone: { type: String },
     googleId: {
       type: String,
@@ -88,6 +89,8 @@ const userSchema = new mongoose.Schema(
     passwordChangedAt: Date,
     tokenVersion: { type: Number, default: 0 },
     twoFactorEnabled: { type: Boolean, default: false },
+    refreshTokenHash: { type: String, select: false },
+    refreshTokenExpiry: { type: Date },
   },
   { timestamps: true }
 );
@@ -99,6 +102,10 @@ userSchema.pre("save", async function preSave(next) {
   }
 
   const salt = await bcrypt.genSalt(10);
+    if (!this.isNew) {
+      this.refreshTokenHash = undefined;
+      this.refreshTokenExpiry = undefined;
+    }
   this.password = await bcrypt.hash(this.password, salt);
   next();
 });

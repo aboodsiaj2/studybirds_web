@@ -1,0 +1,41 @@
+name: Web and backend checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: STUDY-BIRDS-main/client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: STUDY-BIRDS-main/client/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: STUDY-BIRDS-main/server
+    env:
+      STUDY_BIRDS_TEST_TOOLS: ${{ github.workspace }}/STUDY-BIRDS-main/server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: STUDY-BIRDS-main/server/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm install --no-save --package-lock=false --no-audit --no-fund mongodb-memory-server-core@11.3.0
+      - run: node --test --test-concurrency=2 tests/*.test.js

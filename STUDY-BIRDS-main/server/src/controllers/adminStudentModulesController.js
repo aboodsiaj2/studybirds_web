@@ -1,3 +1,5 @@
+const { onPaymentApproved, advanceTo } = require("../utils/journeyAutomation");
+const { sendPushToUser } = require("../utils/pushNotifications");
 const User = require("../models/User");
 const StudentProfile = require("../models/StudentProfile");
 const Application = require("../models/Application");
@@ -10,6 +12,9 @@ const OrientationTestResult = require("../models/OrientationTestResult");
 const SupportTicket = require("../models/SupportTicket");
 const Notification = require("../models/Notification");
 const asyncHandler = require("../utils/asyncHandler");
+const { expireDueDocuments } = require("../utils/documentExpiry");
+const { documentStatusInfo, documentStatusNotice, DOCUMENT_STATUSES_REQUIRING_REASON } = require("../constants/statusCatalog");
+const { ALL_DOCUMENT_DETAILED_STATUSES, DOCUMENT_DETAILED_TO_LEGACY_STATUS } = require("../constants/roles");
 const { hydrateApplicationsWithStudentProfiles } = require("../utils/hydrateApplications");
 
 const getStudentFinancialsAdmin = asyncHandler(async (req, res) => {
@@ -30,11 +35,57 @@ const getStudentFinancialsAdmin = asyncHandler(async (req, res) => {
 });
 
 const getStudentDocumentsAdmin = asyncHandler(async (req, res) => {
+  await expireDueDocuments();
   const documents = await Document.find()
     .populate("student", "name email")
-    .sort({ createdAt: -1 });
+    .populate("reviewedBy", "name")
+    .sort({ createdAt: -1 })
+    .lean();
 
-  res.json(documents);
+  res.json(documents.map((document) => ({ ...document, statusInfo: documentStatusInfo(document) })));
+});
+
+const { documentLabel } = require("../constants/documentTypes");
+
+// Staff review of a student document: any of the 8 statuses, a reason when
+// the student must act, an optional expiry date, a history entry and a
+// plain-language notice to the student. `version` guards against overwriting
+// a colleague's decision made in the meantime.
+const reviewStudentDocumentAdmin = asyncHandler(async (req, res) => {
+  const { detailedStatus, reviewNote = "", expiresAt, version } = req.body;
+  if (!ALL_DOCUMENT_DETAILED_STATUSES.includes(detailedStatus) || typeof reviewNote !== "string" || reviewNote.length > 1000
+    || !Number.isInteger(version) || (expiresAt !== undefined && expiresAt !== null && Number.isNaN(new Date(expiresAt).getTime()))) {
+    return res.status(400).json({ message: "Invalid document review" });
+  }
+  const note = reviewNote.trim();
+  if (DOCUMENT_STATUSES_REQUIRING_REASON.includes(detailedStatus) && !note) {
+    return res.status(400).json({ message: "A reason is required so the student knows what to fix" });
+  }
+  const expiry = expiresAt ? new Date(expiresAt) : expiresAt === null ? null : undefined;
+  if (detailedStatus === "approved" && expiry && expiry <= new Date()) {
+    return res.status(400).json({ message: "An approved document cannot already be expired" });
+  }
+  const now = new Date();
+  const set = {
+    detailedStatus, status: DOCUMENT_DETAILED_TO_LEGACY_STATUS[detailedStatus], reviewNote: note,
+    reviewedBy: req.user._id, reviewedAt: now,
+    ...(expiry !== undefined ? { expiresAt: expiry } : {}),
+  };
+  const updated = await Document.findOneAndUpdate(
+    { _id: req.params.id, __v: version },
+    { $set: set, $inc: { __v: 1 }, $push: { reviewHistory: { detailedStatus, note, expiresAt: expiry || undefined, changedBy: req.user._id, changedAt: now } } },
+    { new: true }
+  ).populate("student", "name email").populate("reviewedBy", "name").lean();
+  if (!updated) {
+    const exists = await Document.exists({ _id: req.params.id });
+    return res.status(exists ? 409 : 404).json({ message: exists ? "This document was updated by someone else. Reload and try again." : "Document not found" });
+  }
+  const notice = documentStatusNotice(updated, documentLabel(updated.type));
+  await Notification.create({ user: updated.student._id, ...notice, link: "/student/documents" });
+  sendPushToUser(updated.student._id, { title: notice.title, body: notice.message || 'تحقق من حالة مستنداتك.', link: '/student/documents' }).catch(() => {});
+  // بند 115: advance journeyStage to documents-review on first employee document review
+  advanceTo(updated.student._id, 'documents-review').catch(() => {});
+  res.json({ ...updated, statusInfo: documentStatusInfo(updated) });
 });
 
 const getStudentNotificationsAdmin = asyncHandler(async (req, res) => {
@@ -208,12 +259,19 @@ const reviewPaymentProofAdmin = asyncHandler(async (req, res) => {
     await invoice.save();
   }
 
+  // بند 115: auto-advance journeyStage to first-payment when payment is approved
+  if (nextStatus === "approved") {
+    onPaymentApproved(proof.student).catch(() => {});
+  }
+
+  const paymentPushTitle = nextStatus === 'approved' ? 'تمت الموافقة على إثبات الدفع' : nextStatus === 'rejected' ? 'تم رفض إثبات الدفع' : 'تم تحديث حالة الدفع';
   await Notification.create({
     user: proof.student,
-    title: "Payment proof reviewed",
+    title: paymentPushTitle,
     message: `Your payment proof has been ${nextStatus}.`,
     type: nextStatus === "rejected" ? "warning" : "success",
   });
+  sendPushToUser(proof.student, { title: paymentPushTitle, body: `تم ${nextStatus === 'approved' ? 'قبول' : nextStatus === 'rejected' ? 'رفض' : 'مراجعة'} إثبات الدفع.`, link: '/student/payments' }).catch(() => {});
 
   res.json(await PaymentProof.findById(proof._id).populate("student", "name email").populate("invoice", "invoiceNumber description amount status").populate("reviewedBy", "name email"));
 });
@@ -226,6 +284,8 @@ const getArrivalRequestsAdmin = asyncHandler(async (req, res) => {
   res.json(items);
 });
 
+const PICKUP_STATUSES = ["not-assigned", "assigned", "en-route", "arrived", "completed"];
+
 const updateArrivalRequestAdmin = asyncHandler(async (req, res) => {
   const item = await ArrivalServiceRequest.findById(req.params.id);
   if (!item) {
@@ -235,6 +295,20 @@ const updateArrivalRequestAdmin = asyncHandler(async (req, res) => {
 
   if (req.body.status !== undefined) item.status = req.body.status;
   if (req.body.adminNote !== undefined) item.adminNote = String(req.body.adminNote || "").trim();
+  if (req.body.travelAlert !== undefined) item.travelAlert = String(req.body.travelAlert || "").trim();
+  if (req.body.pickup !== undefined) {
+    const pickup = req.body.pickup || {};
+    if (pickup.status !== undefined) {
+      if (!PICKUP_STATUSES.includes(pickup.status)) {
+        res.status(400);
+        throw new Error("Invalid pickup status");
+      }
+      item.pickup.status = pickup.status;
+      item.pickup.confirmedAt = pickup.status === "arrived" || pickup.status === "completed" ? new Date() : item.pickup.confirmedAt;
+    }
+    if (pickup.driverName !== undefined) item.pickup.driverName = String(pickup.driverName || "").trim();
+    if (pickup.driverPhone !== undefined) item.pickup.driverPhone = String(pickup.driverPhone || "").trim();
+  }
   item.updatedBy = req.user._id;
   await item.save();
 
@@ -304,6 +378,7 @@ const updateOrientationResultAdmin = asyncHandler(async (req, res) => {
 module.exports = {
   getStudentDetailsAdmin,
   getStudentDocumentsAdmin,
+  reviewStudentDocumentAdmin,
   getStudentNotificationsAdmin,
   getStudentFinancialsAdmin,
   createStudentInvoiceAdmin,

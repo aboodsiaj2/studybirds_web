@@ -3,6 +3,7 @@ import { Bell, CheckCircle2, CircleAlert, CreditCard, FileText, GraduationCap, S
 import { Link } from "react-router-dom";
 import { ApplicationStatusBadge } from "../../components/ApplicationStatusBadge";
 import { EmptyState } from "../../components/EmptyState";
+import { StudentSmartHome } from "../../components/StudentSmartHome";
 import { useLanguage } from "../../hooks/useLanguage";
 import { studentService } from "../../services/studentService";
 import type { StudentDashboardOverview } from "../../types";
@@ -92,7 +93,8 @@ export const StudentDashboardPage = () => {
         </div>
       </section>
 
-      {overview.nextAction && (
+      {/* Servers with the smart home payload get the full context-aware home; older ones keep the next-action card. */}
+      {overview.home ? <StudentSmartHome home={overview.home} /> : overview.nextAction && (
         <section className="panel border border-orange-100 p-6" aria-label={isArabic ? "الخطوة التالية" : "Next action"}>
           <p className="text-sm text-slate-500">{overview.nextAction.waiting ? (isArabic ? "متابعة الفريق" : "Team follow-up") : (isArabic ? "الخطوة التالية" : "Next action")}</p>
           <h2 className="mt-2 text-xl font-semibold text-slate-900">{isArabic ? overview.nextAction.titleAr : overview.nextAction.titleEn}</h2>
@@ -175,7 +177,7 @@ export const StudentDashboardPage = () => {
                       <p className="mt-1 text-sm text-slate-500">{application.program?.title || (isArabic ? "تخصص غير محدد" : "Unknown program")}</p>
                       <p className="mt-2 text-xs text-slate-500">{isArabic ? "آخر تحديث:" : "Updated:"} {formatDate(application.createdAt)}</p>
                     </div>
-                    <ApplicationStatusBadge status={application.status} />
+                    <ApplicationStatusBadge status={application.detailedStatus || application.status} />
                   </div>
                   {application.notes ? <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm text-slate-600">{application.notes}</p> : null}
                 </article>

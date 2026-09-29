@@ -36,6 +36,7 @@ const invoiceSchema = new mongoose.Schema(
       index: true,
     },
     invoiceUrl: String,
+    walletCreditApplied: { type: Number, default: 0, min: 0 },
     category: {
       type: String,
       enum: ["application-fee", "tuition", "service", "housing", "other"],
@@ -47,6 +48,12 @@ const invoiceSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    stripeSessionId: { type: String },
+    currency: { type: String, default: 'USD', uppercase: true },
+    stripeCheckoutExpiresAt: Date,
+    stripeExpectedAmount: Number,
+    stripeExpectedCurrency: String,
+    stripeCheckoutUrl: String,
   },
   { timestamps: true }
 );
