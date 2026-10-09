@@ -18,6 +18,7 @@ const serializeUser = (user) => ({
   role: user.role,
   avatar: user.avatar,
   authProvider: user.authProvider,
+  hasPassword: Boolean(user.password),
   emailVerified: user.emailVerified,
   verifiedPhone: user.verifiedPhone || null,
   // NEW — always present but null/empty for existing student/admin/partner
@@ -108,6 +109,8 @@ const login = asyncHandler(async (req, res) => {
 
 const googleLogin = asyncHandler(async (req, res) => {
   const { credential } = req.body;
+  // Accept the original mobile challenge field during rolling app updates.
+  const emailCode = req.body.emailCode ?? req.body.twoFactorCode;
   const googleClientIds = String(process.env.GOOGLE_CLIENT_ID || "")
     .split(",")
     .map((value) => value.trim())
@@ -140,18 +143,13 @@ const googleLogin = asyncHandler(async (req, res) => {
     $or: [{ googleId: payload.sub }, { email: normalizedEmail }],
   });
 
-  if (user?.twoFactorEnabled) {
-    res.status(403);
-    throw new Error('استخدم البريد وكلمة المرور ورمز التحقق لتسجيل الدخول إلى هذا الحساب.');
-  }
-
   if (!user) {
     user = await User.create({
       name: payload.name || normalizedEmail.split("@")[0],
       email: normalizedEmail,
       googleId: payload.sub,
       authProvider: "google",
-      emailVerified: true,
+      emailVerified: false,
       avatar: payload.picture,
       role: "student",
     });
@@ -164,7 +162,6 @@ const googleLogin = asyncHandler(async (req, res) => {
     }
 
     user.googleId = user.googleId || payload.sub;
-    user.emailVerified = true;
 
     if (!user.avatar && payload.picture) {
       user.avatar = payload.picture;
@@ -175,6 +172,18 @@ const googleLogin = asyncHandler(async (req, res) => {
     }
   }
 
+  // Persist Google linkage before requesting the code. No session token is
+  // issued until the email challenge has been completed successfully.
+  await user.save();
+  if (!emailCode) {
+    await sendCode(user, 'login', res);
+    return res.status(428).json({
+      message: 'أدخل رمز التأكيد المرسل إلى بريد حسابك في Google.',
+      requiresEmailVerification: true,
+    });
+  }
+  await consume(user, 'login', emailCode, res);
+  user.emailVerified = true;
   user.lastLoginAt = new Date();
   await user.save();
 
@@ -182,11 +191,12 @@ const googleLogin = asyncHandler(async (req, res) => {
     await ensureStudentProfile(user._id);
   }
 
-  const tokens = await issueTokenPair(user);
+  const tokens = await issueTokenPair(user, { googlePasswordVerifiedAt: Date.now() });
   res.json({ ...tokens, user: serializeUser(user) });
 });
 
 const me = asyncHandler(async (req, res) => {
+  const account = await User.findById(req.user._id).select("password");
   const profile =
     req.user.role === "student" || req.user.role === "partner"
       ? await StudentProfile.findOne({ user: req.user._id })
@@ -211,7 +221,7 @@ const me = asyncHandler(async (req, res) => {
   }
 
   res.json({
-    user: req.user,
+    user: { ...req.user.toObject(), hasPassword: Boolean(account?.password) },
     profile,
     parentLinkedChildrenCount,
     university,
@@ -226,9 +236,16 @@ const changePassword = asyncHandler(async (req, res) => {
     throw new Error("New password is required");
   }
 
-  if (String(newPassword).length < 6) {
+  if (typeof newPassword !== "string" || newPassword.length < 8) {
     res.status(400);
-    throw new Error("New password must be at least 6 characters");
+    throw new Error("New password must be at least 8 characters");
+  }
+
+  const passwordKinds = [/[A-Z]/, /[a-z]/, /[0-9]/, /[^A-Za-z0-9\s]/]
+    .filter(pattern => pattern.test(newPassword)).length;
+  if (passwordKinds < 2) {
+    res.status(400);
+    throw new Error('كلمة المرور ضعيفة. اخلط بين الأحرف الكبيرة والصغيرة أو الأرقام أو الرموز.');
   }
 
   const user = await User.findById(req.user._id);
@@ -238,12 +255,19 @@ const changePassword = asyncHandler(async (req, res) => {
     throw new Error("User not found");
   }
 
-  if (user.password && !currentPassword) {
+  const verifiedAt = req.googlePasswordVerifiedAt;
+  const googleVerified = typeof verifiedAt === 'number' &&
+    verifiedAt <= Date.now() && Date.now() - verifiedAt < 10 * 60 * 1000;
+  if (req.body.passwordSetup === true && !googleVerified) {
+    res.status(400);
+    throw new Error('انتهى تأكيد حساب Google أو لم يصل إلى السيرفر. أعد الدخول بجوجل وأكد الكود، ثم احفظ كلمة المرور.');
+  }
+  if (user.password && !currentPassword && !googleVerified) {
     res.status(400);
     throw new Error("Current password is required");
   }
 
-  if (user.password && !(await user.comparePassword(currentPassword))) {
+  if (user.password && !googleVerified && !(await user.comparePassword(currentPassword))) {
     res.status(400);
     throw new Error("Current password is incorrect");
   }
@@ -264,12 +288,12 @@ function hashToken(token) {
   return createHash('sha256').update(token).digest('hex');
 }
 
-async function issueTokenPair(user) {
+async function issueTokenPair(user, claims = {}) {
   const refresh = makeRefreshToken();
   user.refreshTokenHash = hashToken(refresh);
   user.refreshTokenExpiry = new Date(Date.now() + REFRESH_TTL_MS);
   await user.save();
-  return { token: generateToken(user._id, user.tokenVersion), refreshToken: refresh };
+  return { token: generateToken(user._id, user.tokenVersion, claims), refreshToken: refresh };
 }
 
 const refresh = asyncHandler(async (req, res) => {
